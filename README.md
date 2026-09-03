@@ -71,6 +71,11 @@ The dashboard reads these secrets for the account equity, buying power, and pape
 The **Research** tab includes an interactive TradingView chart; it is a public chart widget
 and does not display your TradingView account or private broker information.
 
+The **LLM hub** tab provides a conversation with the configured model. It remembers the
+conversation during the current dashboard session and includes the latest Cortex trade ideas
+as context. It uses the same `CORTEX_LLM_API_KEY`, base URL, model, and temperature settings
+as the deep-reasoning analysis.
+
 ---
 
 ## Configuration (`config/settings.py` ← `.env`)

@@ -39,6 +39,7 @@ load_cloud_secrets()
 
 from cortex.analysis.advisor import Advisor
 from cortex.analysis.scanner import default_universe
+from cortex.clients.llm_client import LLMClient
 
 
 st.set_page_config(
@@ -148,6 +149,63 @@ def render_candidate(candidate: dict) -> None:
                 st.caption("Sources: " + " · ".join(candidate["sources"]))
 
 
+def render_llm_hub(report) -> None:
+    """Render a persistent conversation with Cortex's configured LLM."""
+    st.subheader("Talk to Cortex")
+    st.caption("Ask about the current signals, risk, market conditions, or a symbol you are researching.")
+
+    if not get_advisor().llm.enabled:
+        st.warning("LLM chat is unavailable. Add CORTEX_LLM_API_KEY to your local .env or Streamlit Cloud Secrets.")
+        return
+
+    if "llm_messages" not in st.session_state:
+        st.session_state.llm_messages = []
+    for message in st.session_state.llm_messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    if st.button("Clear conversation", key="clear_llm_chat"):
+        st.session_state.llm_messages = []
+        st.rerun()
+
+    prompt = st.chat_input("Ask Cortex anything about your research...")
+    if not prompt:
+        return
+
+    st.session_state.llm_messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    signal_context = []
+    for candidate in report.candidates[:8]:
+        signal = candidate["signal"]
+        signal_context.append(
+            f"{signal.symbol}: {signal.direction}, score {signal.score}, confidence {signal.confidence}, "
+            f"entry {money(signal.entry)}, stop {money(signal.stop_loss)}, target {money(signal.take_profit)}, "
+            f"reason: {candidate.get('bull_case') or candidate.get('deep_reason') or ' '.join(signal.reasons)}"
+        )
+    context = "\n".join(signal_context) or "No current trade ideas."
+    history = "\n".join(
+        f"{message['role'].upper()}: {message['content']}"
+        for message in st.session_state.llm_messages[-8:]
+    )
+    chat_prompt = (
+        "You are continuing a conversation with a retail trader. Answer directly and clearly. "
+        "Use the current Cortex context when relevant, distinguish facts from opinions, and never claim to place trades. "
+        "Mention risk and uncertainty when discussing a trade.\n\n"
+        f"CURRENT CORTEX SIGNALS:\n{context}\n\nCONVERSATION:\n{history}\n\n"
+        "Respond to the user's latest message."
+    )
+    with st.chat_message("assistant"):
+        with st.spinner("Cortex is thinking..."):
+            try:
+                answer = get_advisor().llm.ask(chat_prompt)
+            except Exception as exc:
+                answer = f"I could not reach the configured LLM: {exc}"
+            st.markdown(answer)
+    st.session_state.llm_messages.append({"role": "assistant", "content": answer})
+
+
 def main() -> None:
     st.sidebar.markdown("## ◒ CORTEX")
     st.sidebar.caption("Personal market desk")
@@ -177,7 +235,7 @@ def main() -> None:
     metrics[2].metric("Trade ideas", len(candidates))
     metrics[3].metric("Advise", advised)
 
-    overview, ideas, positions, research = st.tabs(["Overview", "Trade ideas", "Positions", "Research"])
+    overview, ideas, positions, research, llm_hub = st.tabs(["Overview", "Trade ideas", "Positions", "Research", "LLM hub"])
     with overview:
         left, right = st.columns([1.35, 1])
         with left:
@@ -223,6 +281,8 @@ def main() -> None:
         backtest = report.backtest.get("before", {})
         st.write(f"{backtest.get('total_trades', 0)} trades across {backtest.get('total_symbols', 0)} symbols")
         st.json({key: backtest.get(key) for key in ("expectancy_r", "profit_factor", "profitable_symbols")})
+    with llm_hub:
+        render_llm_hub(report)
 
 
 def launch() -> int:
