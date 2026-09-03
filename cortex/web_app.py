@@ -8,6 +8,34 @@ from pathlib import Path
 import os
 
 import streamlit as st
+import streamlit.components.v1 as components
+
+
+def load_cloud_secrets() -> None:
+    """Expose Streamlit secrets through the same environment settings as local runs."""
+    aliases = {
+        "ALPACA_API_KEY": ("ALPACA_API_KEY", "APCA_API_KEY_ID"),
+        "ALPACA_API_SECRET": ("ALPACA_API_SECRET", "APCA_API_SECRET_KEY"),
+        "ALPACA_PAPER": ("ALPACA_PAPER",),
+        "CORTEX_LLM_API_KEY": ("CORTEX_LLM_API_KEY",),
+        "CORTEX_LLM_BASE_URL": ("CORTEX_LLM_BASE_URL",),
+        "CORTEX_LLM_MODEL": ("CORTEX_LLM_MODEL",),
+        "CORTEX_LLM_TEMPERATURE": ("CORTEX_LLM_TEMPERATURE",),
+    }
+    for setting_name, secret_names in aliases.items():
+        if os.environ.get(setting_name):
+            continue
+        for secret_name in secret_names:
+            try:
+                value = st.secrets.get(secret_name)
+            except Exception:
+                value = None
+            if value:
+                os.environ[setting_name] = str(value)
+                break
+
+
+load_cloud_secrets()
 
 from cortex.analysis.advisor import Advisor
 from cortex.analysis.scanner import default_universe
@@ -62,6 +90,36 @@ def money(value: float | None) -> str:
     return f"${value:,.2f}" if value is not None else "—"
 
 
+def render_tradingview(symbol: str, interval: str) -> None:
+        """Render TradingView's public interactive chart widget."""
+        components.html(
+                f"""
+                <div class="tradingview-widget-container" style="height:610px;width:100%">
+                    <div id="tradingview_{symbol.lower()}" style="height:100%;width:100%"></div>
+                    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+                    <script type="text/javascript">
+                        new TradingView.widget({{
+                            "autosize": true,
+                            "symbol": "NASDAQ:{symbol}",
+                            "interval": "{interval}",
+                            "timezone": "exchange",
+                            "theme": "light",
+                            "style": "1",
+                            "locale": "en",
+                            "toolbar_bg": "#f4f6f1",
+                            "enable_publishing": false,
+                            "hide_top_toolbar": false,
+                            "hide_legend": false,
+                            "save_image": false,
+                            "container_id": "tradingview_{symbol.lower()}"
+                        }});
+                    </script>
+                </div>
+                """,
+                height=620,
+        )
+
+
 def render_candidate(candidate: dict) -> None:
     signal = candidate["signal"]
     verdict = candidate.get("verdict") or "wait"
@@ -108,7 +166,11 @@ def main() -> None:
 
     candidates = report.candidates
     advised = sum(1 for candidate in candidates if candidate.get("verdict") == "advise")
-    st.caption(f"Last analysis: {report.generated_at} · Data: {get_advisor().data.source}")
+    data_source = get_advisor().data.source
+    st.caption(f"Last analysis: {report.generated_at} · Data: {data_source}")
+    if report.notes:
+        for note in report.notes:
+            st.error(note)
     metrics = st.columns(4)
     metrics[0].metric("Account equity", money(report.equity))
     metrics[1].metric("Buying power", money(report.buying_power))
@@ -147,6 +209,10 @@ def main() -> None:
         else:
             st.info("No open positions reported.")
     with research:
+        st.subheader("Live TradingView chart")
+        chart_symbol = st.selectbox("Chart symbol", options=list(symbols) or ["AAPL"])
+        chart_interval = st.selectbox("Chart timeframe", options=["15", "60", "240", "D", "W", "M"], index=2)
+        render_tradingview(chart_symbol, chart_interval)
         st.subheader("Recent market events")
         events = report.events_brief or {}
         if events.get("summary"):

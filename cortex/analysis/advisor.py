@@ -97,7 +97,25 @@ class Advisor:
     def _describe_account(self) -> dict:
         if self.data.primary is None:
             return {"equity": 100_000.0, "buying_power": 100_000.0, "positions": [], "source": "default"}
-        acct = self.data.primary.get_account()
+        try:
+            acct = self.data.primary.get_account()
+            if not acct or "equity" not in acct:
+                return {
+                    "equity": 100_000.0,
+                    "buying_power": 100_000.0,
+                    "positions": [],
+                    "source": "alpaca-error",
+                    "error": "Alpaca account could not be read. Check your API keys and paper/live setting.",
+                }
+        except Exception as exc:
+            log.warning("Alpaca account lookup failed: %s", exc)
+            return {
+                "equity": 100_000.0,
+                "buying_power": 100_000.0,
+                "positions": [],
+                "source": "alpaca-error",
+                "error": "Alpaca account could not be read. Check your API keys and paper/live setting.",
+            }
         equity = float(acct.get("equity", 100_000.0))
         bp = float(acct.get("buying_power", equity))
         positions = []
@@ -242,6 +260,8 @@ class Advisor:
         notes = []
         if self.data.primary is None:
             notes.append("No Alpaca credentials: using default $100k equity. Add .env to use your paper account.")
+        elif self.account.get("source") == "alpaca-error":
+            notes.append(self.account.get("error", "Alpaca account unavailable; using default $100k equity."))
 
         return AdvisoryReport(
             generated_at=pd.Timestamp.utcnow().isoformat(),

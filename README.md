@@ -56,6 +56,21 @@ cortex journal --add --symbol AAPL --entry 150 --exit 158 \
 
 After editing `pyproject.toml`, rerun `pip install -e .` once so the `cortex` command is installed.
 
+### Streamlit dashboard
+
+On Streamlit Cloud, set the app's main file to `streamlit_app.py`. Add these values under
+**Settings → Secrets** using TOML syntax:
+
+```toml
+ALPACA_API_KEY = "your_paper_key"
+ALPACA_API_SECRET = "your_paper_secret"
+ALPACA_PAPER = "true"
+```
+
+The dashboard reads these secrets for the account equity, buying power, and paper positions.
+The **Research** tab includes an interactive TradingView chart; it is a public chart widget
+and does not display your TradingView account or private broker information.
+
 ---
 
 ## Configuration (`config/settings.py` ← `.env`)
